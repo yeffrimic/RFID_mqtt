@@ -12,11 +12,11 @@
 
 #include <SoftwareSerial.h>
 
-SoftwareSerial RFID = SoftwareSerial(2, 3);
+SoftwareSerial RFID = SoftwareSerial(13, 12);
 
 char character;
 String our_id;
-
+String myName = "Prueba RFID";
 
 //NTP Servers:
 IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
@@ -62,13 +62,14 @@ int FWVERSION = 1;
 #define HWVERSION "ESPTOY1.22"
 #define DESCRIPTIVELOCATION "CAMPUSTEC"
 
-int publishInterval = 30000; // 30 seconds
-long lastPublishMillis;
-
 String ISO8601;
 
+int verde = 5;
+int rojo = 4;
+int azul = 2;
+
 void handleUpdate(byte* payload) {
-  StaticJsonBuffer<300> jsonBuffer;
+  StaticJsonBuffer<1024> jsonBuffer;
   JsonObject& root = jsonBuffer.parseObject((char*)payload);
   if (!root.success()) {
     Serial.println("handleUpdate: payload parse FAILED");
@@ -86,10 +87,14 @@ void handleUpdate(byte* payload) {
     const char* fieldName = field["field"];
     if (strcmp (fieldName, "metadata") == 0) {
       JsonObject& fieldValue = field["value"];
-      if (fieldValue.containsKey("publishInterval")) {
-        publishInterval = fieldValue["publishInterval"];
-        Serial.print("publishInterval:");
-        Serial.println(publishInterval);
+      if (fieldValue.containsKey("myName")) {
+
+        const char* nodeID = "";
+        nodeID = fieldValue["myName"];
+        myName = String(nodeID);
+
+        Serial.print("myName:");
+        Serial.println(myName);
       }
     }
     if (strcmp (fieldName, "deviceInfo") == 0) {
@@ -168,23 +173,14 @@ void initManagedDevice() {
     Serial.println("subscribe to update FAILED");
   }
 
-  StaticJsonBuffer<300> jsonBuffer;
+  StaticJsonBuffer<1024> jsonBuffer;
   JsonObject& root = jsonBuffer.createObject();
   JsonObject& d = root.createNestedObject("d");
   JsonObject& metadata = d.createNestedObject("metadata");
-  metadata["publishInterval"] = publishInterval;
+  metadata["myName"] = myName;
   JsonObject& supports = d.createNestedObject("supports");
   supports["deviceActions"] = true;
-  JsonObject& deviceInfo = d.createNestedObject("deviceInfo");
-  deviceInfo["serialNumber"] = SERIALNUMBER;
-  deviceInfo["manufacturer"] = MANUFACTURER;
-  deviceInfo["model"] = MODEL;
-  deviceInfo["deviceClass"] = DEVICECLASS;
-  deviceInfo["description"] = DESCRIPTION;
-  deviceInfo["fwVersion"] = FWVERSION;
-  deviceInfo["hwVersion"] = HWVERSION;
-  deviceInfo["descriptiveLocation"] = DESCRIPTIVELOCATION;
-  char buff[300];
+  char buff[1024];
   root.printTo(buff, sizeof(buff));
   Serial.println("publishing device metadata:");
   Serial.println(buff);
@@ -255,14 +251,23 @@ void udpConnect() {
 }
 
 void setup() {
+  pinMode(rojo, OUTPUT);
+  pinMode(verde, OUTPUT);
+
+
   Serial.begin(115200);
   Serial.println();
 
   RFID.begin(9600);
+  delay(100);
   wifiConnect();
+  delay(100);
   mqttConnect();
+  delay(100);
   udpConnect ();
+  delay(100);
   initManagedDevice();
+  delay(100);
 }
 
 void ISO8601TimeStampDisplay() {
@@ -294,47 +299,50 @@ void checkTime () {
 }
 
 void publishData() {
-  String nameID = "holi :3";
-  StaticJsonBuffer<200> jsonbuffer;
-  JsonObject& root = jsonbuffer.createObject();
-  JsonObject& d = root.createNestedObject("d");
-  JsonObject& id = d.createNestedObject("id");
-  id["myName"] = nameID;
-  JsonObject& data = d.createNestedObject("data");
-  data["counter"] = millis() / 1000;
-  JsonObject& sensor = d.createNestedObject("RFID");
-  data["id"] = our_id;
-  JsonObject& timestamp = d.createNestedObject("timestamp");
-  timestamp["dateTime"] = ISO8601;
-  char payload[1024];
-  root.printTo(payload, sizeof(payload));
+  if (our_id != "") {
+    StaticJsonBuffer<1024> jsonbuffer;
+    JsonObject& root = jsonbuffer.createObject();
+    JsonObject& d = root.createNestedObject("d");
+    JsonObject& data = d.createNestedObject("data");
+    data["myName"] = myName;
+    data["id"] = our_id;
+    data["dateTime"] = ISO8601;
+    char payload[1024];
+    root.printTo(payload, sizeof(payload));
 
-  Serial.println(sizeof(payload));
-
-  Serial.print("Sending payload: ");
-  Serial.println(payload);
-  if (client.publish(publishTopic, payload, byte(sizeof(payload)))) {
-    Serial.println("Publish OK");
-  }
-  else {
-    Serial.println("Publish FAILED");
+    Serial.print("Sending payload: ");
+    Serial.println(payload);
+    if (client.publish(publishTopic, payload, byte(sizeof(payload)))) {
+      Serial.println("Publish OK");
+      digitalWrite(rojo, LOW);
+      digitalWrite(verde, HIGH);
+    }
+    else {
+      Serial.println("Publish FAILED");
+      digitalWrite(rojo, HIGH);
+      digitalWrite(verde, LOW);
+    }
+    delay(5000);
+    digitalWrite(rojo, LOW);
+    digitalWrite(verde, LOW);
   }
 }
-
 boolean rfid() {
-  if (our_id.length() > 10) {
-    Serial.println("el id es :");
-    our_id = our_id.substring(1, 13);
-    Serial.println(our_id);
+    if (our_id.length() > 10) {
+      Serial.println("el id es :");
+      our_id = our_id.substring(1, 13);
+      Serial.println(sizeof(our_id));
     return true;
-  }
+  } 
 }
 
 void loop() {
   while (RFID.available() > 0)
   {
+    String a;
     character = RFID.read();
-    our_id += character;
+    a += character;
+  our_id=a;
   }
   if (rfid()) {
     checkTime();
