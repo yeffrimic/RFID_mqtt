@@ -322,7 +322,7 @@ void publishData() {
       digitalWrite(rojo, HIGH);
       digitalWrite(verde, LOW);
     }
-    delay(5000);
+    delay(1000);
     digitalWrite(rojo, LOW);
     digitalWrite(verde, LOW);
   }
@@ -333,16 +333,17 @@ boolean rfid() {
       our_id = our_id.substring(1, 13);
       Serial.println(sizeof(our_id));
     return true;
-  } 
+  } else
+  {
+    return false;
+  }
 }
 
 void loop() {
   while (RFID.available() > 0)
   {
-    String a;
     character = RFID.read();
-    a += character;
-  our_id=a;
+    our_id += character;
   }
   if (rfid()) {
     checkTime();
