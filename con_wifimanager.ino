@@ -1,39 +1,23 @@
-/**
-* Helloworld style, connect an ESP8266 to the IBM IoT Foundation
-*
-* Author: Ant Elder
-* License: Apache License v2
-*/
+
+// Librerias
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h> // https://github.com/knolleary/pubsubclient/releases/tag/v2.3
 #include <ArduinoJson.h> // https://github.com/bblanchon/ArduinoJson/releases/tag/v5.0.7
 #include <TimeLib.h> // TimeTracking
 #include <WiFiUdp.h> // UDP packet handling for NTP request
-
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
-
-// select wich pin will trigger the configuraton portal when set to LOW
-// ESP-01 users please note: the only pins available (0 and 2), are shared 
-// with the bootloader, so always set them HIGH at power-up
-#define TRIGGER_PIN 0
-
-int verde = 5;
-int rojo = 4;
-int azul = 2;
-int a = 0;
 #include <SoftwareSerial.h>
 
+//variables globales
 SoftwareSerial RFID = SoftwareSerial(13, 12);
 
-String our_id;
-String myName = "PruebaRFID2";
 
 //NTP Servers:
 IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
 const char* ntpServerName = "time.nist.gov";
-
+boolean NTP = false;
 const int timeZone = -6;  // Eastern central Time (USA)
 
 WiFiUDP Udp;
@@ -52,6 +36,7 @@ byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 #define DEVICE_TYPE "pruebayeffri"
 #define DEVICE_ID "RFID-02"
 #define TOKEN "ikSw_PzJwlVgbaToN*"
+#define TRIGGER_PIN 0 //for reset 
 //-------- Customise the above values --------
 
 char server[] = ORG ".messaging.internetofthings.ibmcloud.com";
@@ -74,7 +59,17 @@ int FWVERSION = 1;
 #define HWVERSION "ESPTOY1.22"
 #define DESCRIPTIVELOCATION "CAMPUSTEC"
 
+
+int verde = 5; // Pin led verde
+int rojo = 4;// Pin led rojo
+int azul = 2;// Pin led azul
+
+
 String ISO8601;
+String our_id;
+String myName = "PruebaRFID2";
+String Latitud = "15.30";
+String Longitud = "-90.15";
 
 void handleUpdate(byte* payload) {
   StaticJsonBuffer<1024> jsonBuffer;
@@ -95,14 +90,32 @@ void handleUpdate(byte* payload) {
     const char* fieldName = field["field"];
     if (strcmp (fieldName, "metadata") == 0) {
       JsonObject& fieldValue = field["value"];
-      if (fieldValue.containsKey("myName")) {
+      if (fieldValue.containsKey("name")) {
 
         const char* nodeID = "";
-        nodeID = fieldValue["myName"];
+        nodeID = fieldValue["name"];
         myName = String(nodeID);
 
         Serial.print("myName:");
         Serial.println(myName);
+      }
+      if (fieldValue.containsKey("lat")) {
+
+        const char* nodeID = "";
+        nodeID = fieldValue["lat"];
+        Latitud = String(nodeID);
+
+        Serial.print("Latitud:");
+        Serial.println(Latitud);
+      }
+      if (fieldValue.containsKey("long")) {
+
+        const char* nodeID = "";
+        nodeID = fieldValue["long"];
+        Longitud = String(nodeID);
+
+        Serial.print("Longitud:");
+        Serial.println(Longitud);
       }
     }
     if (strcmp (fieldName, "deviceInfo") == 0) {
@@ -135,21 +148,6 @@ void callback(char* topic, byte* payload, unsigned int payloadLength) {
 
 WiFiClient wifiClient;
 PubSubClient client(server, 1883, callback, wifiClient);
-
-/*void wifiConnect() {
-  Serial.print("Connecting to "); Serial.print(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    digitalWrite(azul, HIGH);
-    delay(250);
-    digitalWrite(azul, LOW);
-    delay(250);
-    Serial.print(".");
-  }
-  Serial.print("nWiFi connected, IP address: ");
-  Serial.println(WiFi.localIP());
-}
-*/
 
 void mqttConnect() {
   if (!!!client.connected()) {
@@ -184,25 +182,48 @@ void initManagedDevice() {
   else {
     Serial.println("subscribe to update FAILED");
   }
+  int a = 0;
+  if (a == 0) {
+    StaticJsonBuffer<1024> jsonBuffer;
+    JsonObject& root = jsonBuffer.createObject();
+    JsonObject& d = root.createNestedObject("d");
+    JsonObject& supports = d.createNestedObject("supports");
+    supports["deviceActions"] = true;
+    char buff[1024];
+    root.printTo(buff, sizeof(buff));
+    Serial.println("publishing device metadata:");
+    Serial.println(buff);
 
-  StaticJsonBuffer<1024> jsonBuffer;
-  JsonObject& root = jsonBuffer.createObject();
-  JsonObject& d = root.createNestedObject("d");
-  JsonObject& metadata = d.createNestedObject("metadata");
-  metadata["myName"] = myName;
-  JsonObject& supports = d.createNestedObject("supports");
-  supports["deviceActions"] = true;
-  char buff[1024];
-  root.printTo(buff, sizeof(buff));
-  Serial.println("publishing device metadata:");
-  Serial.println(buff);
+    if (client.publish(manageTopic, buff)) {
+      Serial.println("device Publish ok");
+    }
 
-  if (client.publish(manageTopic, buff)) {
-    Serial.println("device Publish ok");
+    else {
+      Serial.print("device Publish failed:");
+    }
+    a = 1;
   }
+  if (a == 1) {
+    StaticJsonBuffer<1024> jsonBuffer;
+    JsonObject& root = jsonBuffer.createObject();
+    JsonObject& d = root.createNestedObject("d");
+    JsonObject& metadata = d.createNestedObject("metadata");
+    metadata["name"] = myName;
+    metadata["lat"] = Latitud;
+    metadata["long"] = Longitud;
+    char buff[1024];
+    root.printTo(buff, sizeof(buff));
+    Serial.println("publishing device metadata:");
+    Serial.println(buff);
 
-  else {
-    Serial.print("device Publish failed:");
+    if (client.publish(manageTopic, buff)) {
+      Serial.println("device Publish ok");
+    }
+
+    else {
+      Serial.print("device Publish failed:");
+    }
+    a = 2;
   }
 }
 
@@ -239,6 +260,7 @@ time_t getNtpTime()
     int size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
       Serial.println("Receive NTP Response");
+      NTP = true;
       Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
       unsigned long secsSince1900;
       // convert four bytes starting at location 40 to a long integer
@@ -266,25 +288,29 @@ void setup() {
   pinMode(rojo, OUTPUT);
   pinMode(verde, OUTPUT);
   pinMode(azul, OUTPUT);
-
   digitalWrite(azul, LOW);
-
   Serial.begin(115200);
   Serial.println();
-
   pinMode(TRIGGER_PIN, INPUT);
   RFID.begin(9600);
   delay(100);
-  
- // wifiConnect();
- while(a ==0){
-  wifimanager();
- }
+
+  while (WiFi.status() != WL_CONNECTED) {
+    wifimanager();
+    if ( digitalRead(TRIGGER_PIN) == LOW ) {
+      digitalWrite(azul, LOW);
+      delay(2000);
+      ESP.reset();
+
+    }
+  }
   delay(100);
   mqttConnect();
   delay(100);
-  udpConnect ();
-  delay(100);
+  while (NTP == false) {
+    udpConnect ();
+    delay(500);
+  }
   initManagedDevice();
   delay(100);
 }
@@ -323,9 +349,9 @@ void publishData() {
     JsonObject& root = jsonbuffer.createObject();
     JsonObject& d = root.createNestedObject("d");
     JsonObject& data = d.createNestedObject("data");
-    data["myName"] = myName;
+    data["name"] = myName;
     data["id"] = our_id;
-    data["dateTime"] = ISO8601;
+    data["timestamp"] = ISO8601;
     char payload[1024];
     root.printTo(payload, sizeof(payload));
 
@@ -358,55 +384,47 @@ boolean rfid() {
   }
 }
 
-void wifimanager(){
-  
-  if ( digitalRead(TRIGGER_PIN) == LOW ) {
-    digitalWrite(azul,HIGH);
-    //WiFiManager
-    //Local intialization. Once its business is done, there is no need to keep it around
-    WiFiManager wifiManager;
+void wifimanager() {
 
-    //reset settings - for testing
+  WiFiManager wifiManager;
+  digitalWrite(azul, HIGH);
+  Serial.println("empezando");
+  if (!  wifiManager.autoConnect("FlatWifi")) {
+    Serial.println("error no conecto");
     //wifiManager.resetSettings();
-
-    //sets timeout until configuration portal gets turned off
-    //useful to make it all retry or go to sleep
-    //in seconds
     wifiManager.setTimeout(120);
 
-    //it starts an access point with the specified name
-    //here  "AutoConnectAP"
-    //and goes into a blocking loop awaiting configuration
-
-    //WITHOUT THIS THE AP DOES NOT SEEM TO WORK PROPERLY WITH SDK 1.5 , update to at least 1.5.1
-    //WiFi.mode(WIFI_STA);
-    
     if (!wifiManager.startConfigPortal("FlatWifi")) {
-      digitalWrite(azul,LOW);
+      digitalWrite(azul, LOW);
       Serial.println("failed to connect and hit timeout");
-      digitalWrite(rojo,HIGH);
+      digitalWrite(rojo, HIGH);
       delay(3000);
-      digitalWrite(rojo,LOW);
+      digitalWrite(rojo, LOW);
       //reset and try again, or maybe put it to deep sleep
       ESP.reset();
       delay(5000);
     }
-
-    //if you get here you have connected to the WiFi
-    
-      digitalWrite(azul,LOW);
-      digitalWrite(verde,HIGH);
-      delay(3000);
-      digitalWrite(verde,LOW);
-    Serial.println("connected...yeey :)");
-    a = 1;
   }
+  //if you get here you have connected to the WiFi
+
+  digitalWrite(azul, LOW);
+  digitalWrite(verde, HIGH);
+  delay(3000);
+  digitalWrite(verde, LOW);
+  Serial.println("connected...yeey :)");
+
 }
 
 void loop() {
-  
 
-  
+
+  if ( digitalRead(TRIGGER_PIN) == LOW ) {
+
+    digitalWrite(azul, LOW);
+    ESP.reset();
+
+  }
+
   while (RFID.available() > 0)
   {
     digitalWrite(azul, HIGH);
